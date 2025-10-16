@@ -1,3 +1,4 @@
+# app.py
 import streamlit as st
 import os
 import json
@@ -30,8 +31,12 @@ except Exception as e:
 # -------------------------
 def get_model():
     """Returns a configured GenerativeModel instance using a stable model."""
-    # Use the correct model name that's available in the API
-    return genai.GenerativeModel("gemini-1.5-flash")
+    # Try gemini-pro first, which is widely available
+    try:
+        return genai.GenerativeModel("gemini-pro")
+    except:
+        # Fallback to listing available models
+        return genai.GenerativeModel("models/gemini-pro")
 
 # -------------------------
 # Core Function
@@ -45,39 +50,67 @@ def generate_plan(goal: str):
 You are an expert project manager AI. Your task is to break down the user's goal into a structured action plan.
 Goal: "{goal}"
 
-Return a single, valid JSON object with a key "plan". The "plan" key should hold an array of task objects.
-Each task object must include:
-  - "task_id": (integer) A unique ID for the task, starting from 1.
-  - "task_name": (string) A concise name for the task.
-  - "description": (string) A detailed description of what the task involves.
-  - "dependencies": (array of integers) A list of 'task_id's that must be completed before this task can start. Use an empty array [] if there are no dependencies.
-  - "duration_days": (integer) The estimated number of days to complete the task.
+Return ONLY a valid JSON object with this exact structure:
+{{
+  "plan": [
+    {{
+      "task_id": 1,
+      "task_name": "Task name here",
+      "description": "Detailed description here",
+      "dependencies": [],
+      "duration_days": 5
+    }}
+  ]
+}}
+
+Rules:
+- task_id: integer starting from 1
+- task_name: concise string
+- description: detailed string
+- dependencies: array of task_id integers (empty array if none)
+- duration_days: integer
+
+Provide a complete, logical breakdown of the goal into sequential tasks.
 """
     
     try:
         model = get_model()
-        # Enforce JSON output for reliable parsing
-        generation_config = genai.types.GenerationConfig(
-            response_mime_type="application/json",
-            temperature=0.3,
-            max_output_tokens=8192, # Increased for potentially longer plans
-        )
-
+        
+        # Generate content with JSON mode
         response = model.generate_content(
             contents=prompt,
-            generation_config=generation_config
+            generation_config=genai.GenerationConfig(
+                temperature=0.3,
+                max_output_tokens=8192,
+            )
         )
 
-        # Directly parse the JSON response text
+        # Parse the response
+        response_text = response.text.strip()
+        
+        # Try to extract JSON if it's wrapped in markdown code blocks
+        if response_text.startswith("```"):
+            # Remove markdown code blocks
+            lines = response_text.split("\n")
+            json_lines = []
+            in_code_block = False
+            for line in lines:
+                if line.startswith("```"):
+                    in_code_block = not in_code_block
+                    continue
+                if in_code_block or (not line.startswith("```")):
+                    json_lines.append(line)
+            response_text = "\n".join(json_lines).strip()
+        
         try:
-            plan_json = json.loads(response.text)
+            plan_json = json.loads(response_text)
             # Basic validation to ensure the structure is correct
             if "plan" in plan_json and isinstance(plan_json["plan"], list):
                 return plan_json
             else:
-                 return {"error": "AI returned JSON in an unexpected format.", "raw": response.text}
-        except json.JSONDecodeError:
-            return {"error": "AI failed to return a valid JSON object.", "raw": response.text}
+                 return {"error": "AI returned JSON in an unexpected format.", "raw": response_text}
+        except json.JSONDecodeError as je:
+            return {"error": f"AI failed to return valid JSON: {je}", "raw": response_text}
 
     except Exception as e:
         # Catch potential API errors (e.g., authentication, quota, model not found)
