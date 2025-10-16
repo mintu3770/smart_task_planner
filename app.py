@@ -29,10 +29,10 @@ def get_available_model():
         models = client.models.list(page_size=50)
         for m in models:
             if "flash" in m.name.lower() or "pro" in m.name.lower():
-                return m.name  # pick the first valid one
+                return m.name  # pick first valid model
     except Exception:
         pass
-    # Fallback model names (latest as of Oct 2025)
+
     fallback_models = [
         "models/gemini-2.5-flash",
         "models/gemini-2.5-pro",
@@ -40,12 +40,11 @@ def get_available_model():
         "models/gemini-1.5-pro"
     ]
     for model in fallback_models:
-        try:
-            return model
-        except Exception:
-            continue
+        return model
+
     st.error("❌ No supported Gemini model found. Please check your API access.")
     st.stop()
+
 
 # --- Core Logic ---
 def generate_plan(goal: str):
@@ -79,8 +78,13 @@ def generate_plan(goal: str):
             )
         )
 
-        ai_text = response.output_text.strip()
+        # ✅ Extract generated text safely
+        ai_text = ""
+        if response.candidates and response.candidates[0].content.parts:
+            ai_text = response.candidates[0].content.parts[0].text.strip()
+
         ai_text = ai_text.replace("```json", "").replace("```", "").strip()
+
         plan = json.loads(ai_text)
         return plan
 
@@ -88,6 +92,7 @@ def generate_plan(goal: str):
         return {"error": "AI returned an invalid JSON format. Please try rephrasing your goal."}
     except Exception as e:
         return {"error": f"An unexpected error occurred: {e}"}
+
 
 # --- Streamlit UI ---
 st.title("🎯 Smart Task Planner")
