@@ -4,7 +4,7 @@ import os
 import json
 from dotenv import load_dotenv
 
-# ✅ CORRECTED: Use the standard import for the library
+# Corrected: Use the standard import for the library
 import google.generativeai as genai
 
 # -------------------------
@@ -13,7 +13,7 @@ import google.generativeai as genai
 load_dotenv()
 st.set_page_config(page_title="Smart Task Planner", page_icon="🎯", layout="wide")
 
-# Use a try-except block for safer key retrieval
+# --- API Key Configuration ---
 # On Streamlit Cloud, this will read from the app's "Secrets"
 try:
     API_KEY = os.environ["GOOGLE_API_KEY"]
@@ -27,16 +27,18 @@ except Exception as e:
 
 
 # -------------------------
-# Helper Function (Simplified)
+# Helper Function
 # -------------------------
 def get_model():
-    """Returns a configured GenerativeModel instance."""
-    return genai.GenerativeModel("gemini-1.5-flash")
+    """Returns a configured GenerativeModel instance using the latest model."""
+    # Using the '-latest' tag ensures you're on the most recent stable version.
+    return genai.GenerativeModel("gemini-1.5-flash-latest")
 
 # -------------------------
 # Core Function
 # -------------------------
 def generate_plan(goal: str):
+    """Generates a structured project plan from a user's goal using the Gemini API."""
     if not goal:
         return {"error": "Goal cannot be empty."}
 
@@ -55,10 +57,11 @@ Each task object must include:
     
     try:
         model = get_model()
+        # Enforce JSON output for reliable parsing
         generation_config = genai.types.GenerationConfig(
             response_mime_type="application/json",
             temperature=0.3,
-            max_output_tokens=4096,
+            max_output_tokens=8192, # Increased for potentially longer plans
         )
 
         response = model.generate_content(
@@ -66,8 +69,10 @@ Each task object must include:
             generation_config=generation_config
         )
 
+        # Directly parse the JSON response text
         try:
             plan_json = json.loads(response.text)
+            # Basic validation to ensure the structure is correct
             if "plan" in plan_json and isinstance(plan_json["plan"], list):
                 return plan_json
             else:
@@ -76,44 +81,57 @@ Each task object must include:
             return {"error": "AI failed to return a valid JSON object.", "raw": response.text}
 
     except Exception as e:
+        # Catch potential API errors (e.g., authentication, quota, model not found)
         return {"error": f"An error occurred while calling the AI model: {e}"}
 
 # -------------------------
 # Streamlit UI
 # -------------------------
 st.title("🎯 Smart Task Planner")
-st.write("Describe your goal, and AI will generate a structured action plan!")
+st.write(
+    "Describe your high-level goal, and the AI will break it down into a "
+    "detailed, structured action plan for you."
+)
 
+# Initialize session state for the input field
 if "goal_input" not in st.session_state:
-    st.session_state.goal_input = "Build a minimal e-commerce web app in 4 weeks."
+    st.session_state.goal_input = "Launch a minimal e-commerce web app in 4 weeks."
 
 goal_input = st.text_input(
     "Enter your goal:",
     key="goal_input"
 )
 
-if st.button("Generate Plan", type="primary"):
+if st.button("Generate Plan", type="primary", use_container_width=True):
     if goal_input:
-        with st.spinner("🧠 AI is generating your plan..."):
+        with st.spinner("🧠 AI is thinking... Please wait."):
             result = generate_plan(goal_input)
 
         if "error" in result:
             st.error(f'**Error:** {result["error"]}')
             if "raw" in result and result["raw"]:
-                with st.expander("📟 Raw AI output"):
+                with st.expander("📟 View Raw AI Output"):
                     st.code(result["raw"], language="text")
         elif "plan" in result:
             tasks = result.get("plan", [])
+            
             if not tasks:
                  st.warning("The AI generated an empty plan. Try a more specific goal.")
             else:
                 st.success("✅ Here is your AI-generated action plan:")
+                # Sort tasks by ID for a logical display order
                 sorted_tasks = sorted(tasks, key=lambda x: x.get("task_id", 0))
+                
                 for task in sorted_tasks:
-                    with st.expander(f"**Task {task.get('task_id', '?')}: {task.get('task_name', 'Unnamed')}** ({task.get('duration_days', '?')} days)"):
-                        st.markdown(f"**Description:** {task.get('description', 'No description.')}")
-                        deps = ", ".join(map(str, task.get("dependencies", []))) if task.get("dependencies") else "None"
-                        st.markdown(f"**Dependencies:** Task(s) {deps}")
+                    task_id = task.get('task_id', '?')
+                    task_name = task.get('task_name', 'Unnamed Task')
+                    duration = task.get('duration_days', '?')
+                    dependencies = task.get("dependencies", [])
+                    deps_str = ", ".join(map(str, dependencies)) if dependencies else "None"
+
+                    with st.expander(f"**Task {task_id}: {task_name}** ({duration} days)"):
+                        st.markdown(f"**Description:** {task.get('description', 'No description provided.')}")
+                        st.markdown(f"**Dependencies:** Task(s) {deps_str}")
         else:
             st.warning("The AI did not return a valid plan. Please try rephrasing your goal.")
     else:
