@@ -162,4 +162,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 Your Name - C.Yashwanth Chowdary - chediletiyashwanthcgowdary@gmail.com
 
-Project Link: https://smarttaskplanner-htsqjpuztkyqyq5ptnagjm.streamlit.app/
+Live app Link: https://smarttaskplanner-htsqjpuztkyqyq5ptnagjm.streamlit.app/
