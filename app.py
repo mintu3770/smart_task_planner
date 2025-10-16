@@ -2,6 +2,8 @@ import streamlit as st
 import os
 import json
 from dotenv import load_dotenv
+
+# --- CHANGE 1: Import the OpenAI library ---
 import openai
 
 # --- Configuration and Setup ---
@@ -12,17 +14,12 @@ load_dotenv()
 # Set up page configuration for a better layout
 st.set_page_config(page_title="Smart Task Planner", page_icon="🤖", layout="wide")
 
-# --- CHANGE 1: Configure the client to use DeepSeek's API ---
+# --- CHANGE 2: Configure the OpenAI client ---
 try:
-    client = openai.OpenAI(
-        # The key name is now DEEPSEEK_API_KEY
-        api_key=os.environ["DEEPSEEK_API_KEY"],
-        # We point the client to DeepSeek's endpoint
-        base_url="https://api.deepseek.com/v1"
-    )
+    # It's best practice to use the OpenAI client
+    client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 except (KeyError):
-    # Update the error message to ask for the correct key
-    st.error("🚨 DeepSeek API Key not found. Please add it to your Streamlit Secrets.")
+    st.error("🚨 OpenAI API Key not found. Please add it to your Streamlit Secrets.")
     st.stop()
 
 
@@ -30,11 +27,13 @@ except (KeyError):
 
 def generate_plan(goal):
     """
-    Uses the DeepSeek LLM to generate a task plan based on the user's goal.
+    Uses the OpenAI LLM to generate a task plan based on the user's goal.
     """
     if not goal:
         return {"error": "Goal cannot be empty."}
 
+    # --- CHANGE 3: The prompt is now structured for OpenAI's Chat Completions API ---
+    # We use a "system" message to set the AI's persona and a "user" message for the specific request.
     system_prompt = """
     You are an expert project manager AI. Your task is to break down a complex user goal into a detailed, actionable plan.
     Generate a plan as a structured JSON object. The JSON object must have a single key "plan" which is an array of task objects.
@@ -50,27 +49,25 @@ def generate_plan(goal):
     user_prompt = f"The user's goal is: \"{goal}\""
 
     try:
-        # --- CHANGE 2: The API call now uses a DeepSeek model ---
+        # --- CHANGE 4: The API call is now to OpenAI ---
         response = client.chat.completions.create(
-            model="deepseek-chat",  # Use a powerful DeepSeek model
+            model="gpt-3.5-turbo",  # A powerful and cost-effective model
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            # Note: Not all models support JSON mode. If this fails, we may need to parse manually.
-            # DeepSeek is generally good at following JSON instructions in the prompt.
-            # response_format={"type": "json_object"} # Commenting out for broader compatibility
+            response_format={"type": "json_object"} # Use JSON mode for reliable output
         )
         
+        # The response from OpenAI is in a different format
         plan_json_string = response.choices[0].message.content
-        # Clean up the response to ensure it's a valid JSON string
-        cleaned_response = plan_json_string.strip().replace("```json", "").replace("```", "")
-        plan = json.loads(cleaned_response)
+        plan = json.loads(plan_json_string)
         return plan
 
     except json.JSONDecodeError:
         return {"error": "AI returned an invalid format. Please try rephrasing your goal."}
     except Exception as e:
+        # A catch-all for other potential API or generation errors
         return {"error": f"An unexpected error occurred: {e}"}
 
 # --- Streamlit Frontend (No changes needed below this line) ---
@@ -106,4 +103,3 @@ if st.button("Generate Plan", type="primary"):
             st.warning("The AI couldn't generate a plan. Please try rephrasing your goal for better results.")
     else:
         st.warning("Please enter a goal to get started.")
-
