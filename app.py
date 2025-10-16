@@ -3,7 +3,7 @@ import json
 import streamlit as st
 from dotenv import load_dotenv
 
-# ✅ NEW official Google SDK (make sure you install it via: pip install google-genai)
+# ✅ New SDK import (pip install google-genai)
 from google import genai
 
 # -------------------------------
@@ -16,18 +16,17 @@ st.set_page_config(page_title="Smart Task Planner", page_icon="🤖", layout="wi
 API_KEY = os.getenv("GOOGLE_API_KEY")
 
 if not API_KEY:
-    st.error("🚨 GOOGLE_API_KEY not found! Please set it in your environment variables or Streamlit Secrets.")
+    st.error("🚨 GOOGLE_API_KEY not found! Please add it in your Streamlit Secrets or .env file.")
     st.stop()
 
-# Configure GenAI client
-genai.configure(api_key=API_KEY)
-client = genai.Client()
+# ✅ Create a client directly (no configure() call in new SDK)
+client = genai.Client(api_key=API_KEY)
 
 # -------------------------------
 # 🧠 Core Logic
 # -------------------------------
 def generate_plan(goal: str):
-    """Generate a structured project plan based on a user goal."""
+    """Generate a structured project plan based on the user's goal."""
     if not goal:
         return {"error": "Goal cannot be empty."}
 
@@ -48,13 +47,15 @@ Provide only the raw JSON output, without any introductory text or markdown form
     """
 
     try:
+        # ✅ Updated call format
         response = client.models.generate_content(
-            model="gemini-2.5-flash",  # ✅ Supported model name
-            contents=prompt
+            model="gemini-2.0-flash",
+            contents=prompt,
         )
 
         raw = response.text.strip()
-        # Clean any markdown fences
+
+        # Clean any markdown fences if present
         if raw.startswith("```"):
             raw = raw.split("```", 1)[1].rsplit("```", 1)[0].strip()
 
@@ -91,7 +92,6 @@ if st.button("Generate Plan", type="primary"):
             st.success("✅ Here's your AI-generated action plan!")
 
             tasks = sorted(result["plan"], key=lambda x: x["task_id"])
-
             for task in tasks:
                 with st.expander(f"**Task {task['task_id']}: {task['task_name']}** ({task['duration_days']} days)"):
                     st.markdown(f"**Description:** {task['description']}")
