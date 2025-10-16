@@ -19,10 +19,40 @@ if not API_KEY:
 # Initialize Gemini client
 client = genai.Client(api_key=API_KEY)
 
+# --- Helper function to find a working model ---
+def get_available_model():
+    """
+    Try fetching available Gemini models and return a usable one.
+    Falls back to known stable options.
+    """
+    try:
+        models = client.models.list(page_size=50)
+        for m in models:
+            if "flash" in m.name.lower() or "pro" in m.name.lower():
+                return m.name  # pick the first valid one
+    except Exception:
+        pass
+    # Fallback model names (latest as of Oct 2025)
+    fallback_models = [
+        "models/gemini-2.5-flash",
+        "models/gemini-2.5-pro",
+        "models/gemini-2.0-flash",
+        "models/gemini-1.5-pro"
+    ]
+    for model in fallback_models:
+        try:
+            return model
+        except Exception:
+            continue
+    st.error("❌ No supported Gemini model found. Please check your API access.")
+    st.stop()
+
 # --- Core Logic ---
 def generate_plan(goal: str):
     if not goal:
         return {"error": "Goal cannot be empty."}
+
+    model_name = get_available_model()
 
     prompt = f"""
     You are an expert project manager AI. Your task is to break down a complex user goal into a detailed, actionable plan.
@@ -41,19 +71,16 @@ def generate_plan(goal: str):
 
     try:
         response = client.models.generate_content(
-            model="gemini-1.5-flash",  # ✅ use supported model
+            model=model_name,
             contents=prompt,
             config=GenerateContentConfig(
-                temperature=0.2,
                 max_output_tokens=1024,
+                temperature=0.3
             )
         )
 
-        # Extract text safely
         ai_text = response.output_text.strip()
         ai_text = ai_text.replace("```json", "").replace("```", "").strip()
-
-        # Parse JSON
         plan = json.loads(ai_text)
         return plan
 
@@ -64,7 +91,7 @@ def generate_plan(goal: str):
 
 # --- Streamlit UI ---
 st.title("🎯 Smart Task Planner")
-st.write("Describe your goal, and let AI break it down into a structured action plan!")
+st.write("Describe your goal, and let AI break it down into a structured, actionable project plan!")
 
 goal_input = st.text_input(
     "Enter your goal:",
@@ -80,7 +107,7 @@ if st.button("Generate Plan", type="primary"):
         if "error" in result:
             st.error(result["error"])
         elif "plan" in result:
-            st.success("✅ Here's your action plan!")
+            st.success("✅ Here's your AI-generated action plan!")
 
             tasks = sorted(result["plan"], key=lambda x: x["task_id"])
             for task in tasks:
