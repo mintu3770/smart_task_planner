@@ -25,41 +25,19 @@ except Exception as e:
 
 
 # -------------------------
-# Helper Function
+# Available Models
 # -------------------------
-def list_available_models():
-    """List all available models for debugging."""
-    try:
-        models = genai.list_models()
-        return [m.name for m in models if 'generateContent' in m.supported_generation_methods]
-    except Exception as e:
-        return [f"Error listing models: {e}"]
-
-def get_model():
-    """Returns a configured GenerativeModel instance."""
-    # Try different model name formats
-    possible_models = [
-        "gemini-1.5-pro",
-        "gemini-1.5-flash-001",
-        "gemini-1.5-pro-001",
-        "models/gemini-1.5-pro",
-        "models/gemini-1.5-flash-001"
-    ]
-    
-    for model_name in possible_models:
-        try:
-            return genai.GenerativeModel(model_name)
-        except:
-            continue
-    
-    # If none work, raise error with available models
-    available = list_available_models()
-    raise Exception(f"Could not initialize any model. Available models: {available}")
+AVAILABLE_MODELS = {
+    "Gemini 2.0 Flash (Experimental) - Fastest": "models/gemini-2.0-flash-exp",
+    "Gemini 2.5 Flash - Recommended": "models/gemini-2.5-flash",
+    "Gemini 2.5 Pro - Most Capable": "models/gemini-2.5-pro",
+    "Gemini 2.0 Flash - Stable": "models/gemini-2.0-flash",
+}
 
 # -------------------------
 # Core Function
 # -------------------------
-def generate_plan(goal: str):
+def generate_plan(goal: str, model_name: str):
     """Generates a structured project plan from a user's goal using the Gemini API."""
     if not goal:
         return {"error": "Goal cannot be empty."}
@@ -89,11 +67,11 @@ Rules:
 - duration_days: integer
 
 Provide a complete, logical breakdown of the goal into sequential tasks.
-Return ONLY the JSON, no other text.
+Return ONLY the JSON, no other text or markdown formatting.
 """
     
     try:
-        model = get_model()
+        model = genai.GenerativeModel(model_name)
         
         # Generate content
         response = model.generate_content(
@@ -149,26 +127,31 @@ st.write(
     "detailed, structured action plan for you."
 )
 
-# Debug: Show available models
-with st.expander("🔍 Debug: Available Models"):
-    if st.button("List Available Models"):
-        with st.spinner("Fetching available models..."):
-            models = list_available_models()
-            st.write(models)
+# Model selection
+col1, col2 = st.columns([3, 1])
 
-# Initialize session state for the input field
-if "goal_input" not in st.session_state:
-    st.session_state.goal_input = "Launch a minimal e-commerce web app in 4 weeks."
+with col1:
+    # Initialize session state for the input field
+    if "goal_input" not in st.session_state:
+        st.session_state.goal_input = "Launch a minimal e-commerce web app in 4 weeks."
 
-goal_input = st.text_input(
-    "Enter your goal:",
-    key="goal_input"
-)
+    goal_input = st.text_input(
+        "Enter your goal:",
+        key="goal_input"
+    )
+
+with col2:
+    selected_model_display = st.selectbox(
+        "Select Model:",
+        options=list(AVAILABLE_MODELS.keys()),
+        index=0  # Default to Gemini 2.0 Flash Experimental
+    )
+    selected_model = AVAILABLE_MODELS[selected_model_display]
 
 if st.button("Generate Plan", type="primary", use_container_width=True):
     if goal_input:
         with st.spinner("🧠 AI is thinking... Please wait."):
-            result = generate_plan(goal_input)
+            result = generate_plan(goal_input, selected_model)
 
         if "error" in result:
             st.error(f'**Error:** {result["error"]}')
@@ -199,3 +182,7 @@ if st.button("Generate Plan", type="primary", use_container_width=True):
             st.warning("The AI did not return a valid plan. Please try rephrasing your goal.")
     else:
         st.warning("Please enter a goal first.")
+
+# Footer
+st.markdown("---")
+st.caption(f"Using model: `{selected_model}`")
