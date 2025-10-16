@@ -1,4 +1,3 @@
-# app.py
 import streamlit as st
 import os
 import json
@@ -30,9 +29,9 @@ except Exception as e:
 # Helper Function
 # -------------------------
 def get_model():
-    """Returns a configured GenerativeModel instance using the latest model."""
-    # Using the '-latest' tag ensures you're on the most recent stable version.
-    return genai.GenerativeModel("gemini-1.5-flash-latest")
+    """Returns a configured GenerativeModel instance using a stable model."""
+    # Use the correct model name that's available in the API
+    return genai.GenerativeModel("gemini-1.5-flash")
 
 # -------------------------
 # Core Function
