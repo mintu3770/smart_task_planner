@@ -4,7 +4,6 @@ import os
 import json
 from dotenv import load_dotenv
 
-# Corrected: Use the standard import for the library
 import google.generativeai as genai
 
 # -------------------------
@@ -14,7 +13,6 @@ load_dotenv()
 st.set_page_config(page_title="Smart Task Planner", page_icon="🎯", layout="wide")
 
 # --- API Key Configuration ---
-# On Streamlit Cloud, this will read from the app's "Secrets"
 try:
     API_KEY = os.environ["GOOGLE_API_KEY"]
     genai.configure(api_key=API_KEY)
@@ -29,14 +27,34 @@ except Exception as e:
 # -------------------------
 # Helper Function
 # -------------------------
-def get_model():
-    """Returns a configured GenerativeModel instance using a stable model."""
-    # Try gemini-pro first, which is widely available
+def list_available_models():
+    """List all available models for debugging."""
     try:
-        return genai.GenerativeModel("gemini-pro")
-    except:
-        # Fallback to listing available models
-        return genai.GenerativeModel("models/gemini-pro")
+        models = genai.list_models()
+        return [m.name for m in models if 'generateContent' in m.supported_generation_methods]
+    except Exception as e:
+        return [f"Error listing models: {e}"]
+
+def get_model():
+    """Returns a configured GenerativeModel instance."""
+    # Try different model name formats
+    possible_models = [
+        "gemini-1.5-pro",
+        "gemini-1.5-flash-001",
+        "gemini-1.5-pro-001",
+        "models/gemini-1.5-pro",
+        "models/gemini-1.5-flash-001"
+    ]
+    
+    for model_name in possible_models:
+        try:
+            return genai.GenerativeModel(model_name)
+        except:
+            continue
+    
+    # If none work, raise error with available models
+    available = list_available_models()
+    raise Exception(f"Could not initialize any model. Available models: {available}")
 
 # -------------------------
 # Core Function
@@ -71,16 +89,19 @@ Rules:
 - duration_days: integer
 
 Provide a complete, logical breakdown of the goal into sequential tasks.
+Return ONLY the JSON, no other text.
 """
     
     try:
         model = get_model()
         
-        # Generate content with JSON mode
+        # Generate content
         response = model.generate_content(
             contents=prompt,
             generation_config=genai.GenerationConfig(
                 temperature=0.3,
+                top_p=0.95,
+                top_k=40,
                 max_output_tokens=8192,
             )
         )
@@ -89,8 +110,11 @@ Provide a complete, logical breakdown of the goal into sequential tasks.
         response_text = response.text.strip()
         
         # Try to extract JSON if it's wrapped in markdown code blocks
-        if response_text.startswith("```"):
-            # Remove markdown code blocks
+        if "```json" in response_text:
+            start = response_text.find("```json") + 7
+            end = response_text.find("```", start)
+            response_text = response_text[start:end].strip()
+        elif response_text.startswith("```"):
             lines = response_text.split("\n")
             json_lines = []
             in_code_block = False
@@ -98,7 +122,7 @@ Provide a complete, logical breakdown of the goal into sequential tasks.
                 if line.startswith("```"):
                     in_code_block = not in_code_block
                     continue
-                if in_code_block or (not line.startswith("```")):
+                if in_code_block:
                     json_lines.append(line)
             response_text = "\n".join(json_lines).strip()
         
@@ -113,7 +137,7 @@ Provide a complete, logical breakdown of the goal into sequential tasks.
             return {"error": f"AI failed to return valid JSON: {je}", "raw": response_text}
 
     except Exception as e:
-        # Catch potential API errors (e.g., authentication, quota, model not found)
+        # Catch potential API errors
         return {"error": f"An error occurred while calling the AI model: {e}"}
 
 # -------------------------
@@ -124,6 +148,13 @@ st.write(
     "Describe your high-level goal, and the AI will break it down into a "
     "detailed, structured action plan for you."
 )
+
+# Debug: Show available models
+with st.expander("🔍 Debug: Available Models"):
+    if st.button("List Available Models"):
+        with st.spinner("Fetching available models..."):
+            models = list_available_models()
+            st.write(models)
 
 # Initialize session state for the input field
 if "goal_input" not in st.session_state:
