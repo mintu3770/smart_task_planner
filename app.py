@@ -2,7 +2,7 @@
 import streamlit as st
 import os
 import json
-import re
+# The `re` module is no longer needed
 from dotenv import load_dotenv
 from google import genai
 from google.genai.types import GenerateContentConfig
@@ -11,52 +11,27 @@ from google.genai.types import GenerateContentConfig
 # Configuration and Setup
 # -------------------------
 load_dotenv()
-st.set_page_config(page_title="Smart Task Planner", page_icon="🤖", layout="wide")
+st.set_page_config(page_title="Smart Task Planner", page_icon="🎯", layout="wide")
 
 API_KEY = os.getenv("GOOGLE_API_KEY")
 if not API_KEY:
     st.error("🚨 Missing Google API key. Add it in `.env` as GOOGLE_API_KEY='your_key'")
     st.stop()
 
-client = genai.Client(api_key=API_KEY)
+# Initialize the client
+# Note: Using genai.configure(api_key=API_KEY) is the more common pattern
+genai.configure(api_key=API_KEY)
 
 # -------------------------
 # Helper Functions
 # -------------------------
 def get_available_model():
-    """Return a valid Gemini model from your API access."""
-    try:
-        models = client.models.list(page_size=50)
-        for m in models:
-            if "flash" in m.name.lower() or "pro" in m.name.lower():
-                return m.name
-    except Exception:
-        pass
-
-    # Fallback known stable models
-    fallback_models = [
-        "models/gemini-2.5-flash",
-        "models/gemini-2.5-pro",
-        "models/gemini-2.0-flash",
-        "models/gemini-1.5-pro"
-    ]
-    for model in fallback_models:
-        return model
-
-    st.error("❌ No supported Gemini model found. Check API access.")
-    st.stop()
+    """Return a valid Gemini model."""
+    # This function can be simplified as the model names are standard
+    return "models/gemini-1.5-flash"
 
 
-def extract_json(text: str):
-    """Extract the first JSON object in the text using regex."""
-    match = re.search(r"\{.*\}", text, flags=re.DOTALL)
-    if match:
-        candidate = match.group(0)
-        try:
-            return json.loads(candidate)
-        except json.JSONDecodeError:
-            return None
-    return None
+# The extract_json function is no longer needed.
 
 # -------------------------
 # Core Function
@@ -65,51 +40,50 @@ def generate_plan(goal: str):
     if not goal:
         return {"error": "Goal cannot be empty."}
 
-    model_name = get_available_model()
-
+    # Simplified the prompt as instructions are now handled by the API config
     prompt = f"""
 You are an expert project manager AI. Break down the user's goal into a structured action plan.
 Goal: "{goal}"
 
-⚠️ Important Instructions:
-- Return **only a single valid JSON object**.
-- JSON must have a key "plan" which is an array of task objects.
-- Each task object must include:
-    - "task_id": integer starting from 1
-    - "task_name": string
-    - "description": string
-    - "dependencies": array of integers, empty if none
-    - "duration_days": integer
-- Do not include any text, markdown, or code fences.
-- If you make a mistake, return **valid JSON only**.
-
-Example:
-{{"plan":[{{"task_id":1,"task_name":"...","description":"...","dependencies":[],"duration_days":3}}]}}
+Return a JSON object with a key "plan" which is an array of task objects.
+Each task object must include:
+  - "task_id": integer starting from 1
+  - "task_name": string
+  - "description": string
+  - "dependencies": array of integers, empty if none
+  - "duration_days": integer
 """
-
+    
     try:
-        response = client.models.generate_content(
-            model=model_name,
-            contents=prompt,
-            config=GenerateContentConfig(
-                max_output_tokens=1024,
-                temperature=0  # deterministic output
-            )
+        model = genai.GenerativeModel(get_available_model())
+
+        # Correctly configure the generation settings
+        generation_config = GenerateContentConfig(
+            response_mime_type="application/json",
+            temperature=0.2,
+            max_output_tokens=2048,
         )
 
-        ai_text = ""
-        if response.candidates and response.candidates[0].content.parts:
-            ai_text = response.candidates[0].content.parts[0].text.strip()
+        response = model.generate_content(
+            contents=prompt,
+            generation_config=generation_config
+        )
 
-        # Extract JSON
-        plan_json = extract_json(ai_text)
-        if plan_json:
-            return plan_json
-        else:
-            return {"error": "AI returned invalid JSON.", "raw": ai_text}
+        ai_text = response.text.strip()
+
+        # Directly parse the JSON since the output is guaranteed to be a JSON string
+        try:
+            plan_json = json.loads(ai_text)
+            # Basic validation
+            if "plan" in plan_json and isinstance(plan_json["plan"], list):
+                return plan_json
+            else:
+                 return {"error": "AI returned JSON in the wrong format.", "raw": ai_text}
+        except json.JSONDecodeError:
+            return {"error": "AI failed to return a valid JSON object.", "raw": ai_text}
 
     except Exception as e:
-        return {"error": f"Unexpected error: {e}"}
+        return {"error": f"An unexpected error occurred: {e}"}
 
 # -------------------------
 # Streamlit UI
@@ -129,19 +103,24 @@ if st.button("Generate Plan", type="primary"):
             result = generate_plan(goal_input)
 
         if "error" in result:
-            st.error(result["error"])
-            if "raw" in result:
+            st.error(f'**Error:** {result["error"]}')
+            if "raw" in result and result["raw"]:
                 with st.expander("📟 Raw AI output"):
-                    st.code(result["raw"])
+                    st.code(result["raw"], language="text")
         elif "plan" in result:
             st.success("✅ AI-generated action plan:")
-
+            
+            # Sort tasks by ID for correct display order
             tasks = sorted(result["plan"], key=lambda x: x.get("task_id", 0))
+
+            if not tasks:
+                 st.warning("The generated plan is empty. Try a more specific goal.")
+            
             for task in tasks:
-                with st.expander(f"Task {task.get('task_id', '?')}: {task.get('task_name', 'Unnamed')} ({task.get('duration_days', '?')} days)"):
-                    st.markdown(f"**Description:** {task.get('description', '')}")
+                with st.expander(f"**Task {task.get('task_id', '?')}: {task.get('task_name', 'Unnamed')}** ({task.get('duration_days', '?')} days)"):
+                    st.markdown(f"**Description:** {task.get('description', 'No description provided.')}")
                     deps = ", ".join(map(str, task.get("dependencies", []))) if task.get("dependencies") else "None"
-                    st.markdown(f"**Dependencies:** {deps}")
+                    st.markdown(f"**Dependencies:** Task(s) {deps}")
         else:
             st.warning("AI did not return a valid plan. Try rephrasing your goal.")
     else:
